@@ -1,9 +1,12 @@
-import { join } from "./path"
+import { realpathSync } from "fs"
+import { join, relative } from "./path"
 
 export interface PackageDetails {
   humanReadablePathSpecifier: string
   pathSpecifier: string
   path: string
+  /** Realpath to the install location, relative to the app path */
+  realpath?: string
   name: string
   isNested: boolean
   packageNames: string[]
@@ -85,12 +88,20 @@ export function parseNameAndVersion(
       return null
     }
   }
-  return null
 }
 
 export function getPackageDetailsFromPatchFilename(
-  patchFilename: string,
+  params:
+    | string
+    | {
+        patchFilename: string
+        appPath: string
+      },
 ): PatchedPackageDetails | null {
+  const { patchFilename, appPath } =
+    typeof params === "string"
+      ? { patchFilename: params, appPath: undefined }
+      : params
   const parts = patchFilename
     .replace(/(\.dev)?\.patch$/, "")
     .split("++")
@@ -107,13 +118,16 @@ export function getPackageDetailsFromPatchFilename(
     return null
   }
 
+  const path = join(
+    "node_modules",
+    parts.map(({ packageName: name }) => name).join("/node_modules/"),
+  )
+
   return {
     name: lastPart.packageName,
     version: lastPart.version,
-    path: join(
-      "node_modules",
-      parts.map(({ packageName: name }) => name).join("/node_modules/"),
-    ),
+    path,
+    realpath: appPath && relative(appPath, realpathSync(join(appPath, path))),
     patchFilename,
     pathSpecifier: parts.map(({ packageName: name }) => name).join("/"),
     humanReadablePathSpecifier: parts
@@ -128,8 +142,17 @@ export function getPackageDetailsFromPatchFilename(
 }
 
 export function getPatchDetailsFromCliString(
-  specifier: string,
+  params:
+    | string
+    | {
+        specifier: string
+        appPath: string
+      },
 ): PackageDetails | null {
+  const { specifier, appPath } =
+    typeof params === "string"
+      ? { specifier: params, appPath: undefined }
+      : params
   const parts = specifier.split("/")
 
   const packageNames = []
@@ -142,13 +165,11 @@ export function getPatchDetailsFromCliString(
         return null
       }
       scope = parts[i]
+    } else if (scope) {
+      packageNames.push(`${scope}/${parts[i]}`)
+      scope = null
     } else {
-      if (scope) {
-        packageNames.push(`${scope}/${parts[i]}`)
-        scope = null
-      } else {
-        packageNames.push(parts[i])
-      }
+      packageNames.push(parts[i])
     }
   }
 
@@ -157,6 +178,7 @@ export function getPatchDetailsFromCliString(
   return {
     packageNames,
     path,
+    realpath: appPath && relative(appPath, realpathSync(join(appPath, path))),
     name: packageNames[packageNames.length - 1],
     humanReadablePathSpecifier: packageNames.join(" => "),
     isNested: packageNames.length > 1,
