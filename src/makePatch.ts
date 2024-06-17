@@ -200,7 +200,7 @@ export function makePatch({
     )
 
     // copy .npmrc/.yarnrc in case packages are hosted in private registry
-    // copy .yarn directory as well to ensure installations work in yarn 2
+    // copy parts of .yarn directory as well to ensure installations work in yarn 2
     // tslint:disable-next-line:align
     ;[
       ".npmrc",
@@ -210,9 +210,13 @@ export function makePatch({
       ".yarn/plugins",
       ".yarn/releases",
     ].forEach((rcFile) => {
-      const rcPath = join(appPath, rcFile)
-      if (existsSync(rcPath)) {
-        copySync(rcPath, join(tmpRepo.name, rcFile), { dereference: true })
+      const appRcPath = join(appPath, rcFile)
+      const repoRcPath =
+        packageDetails.repoRoot && join(packageDetails.repoRoot, rcFile)
+      if (existsSync(appRcPath)) {
+        copySync(appRcPath, join(tmpRepo.name, rcFile), { dereference: true })
+      } else if (repoRcPath && existsSync(repoRcPath)) {
+        copySync(repoRcPath, join(tmpRepo.name, rcFile), { dereference: true })
       }
     })
 
@@ -224,7 +228,6 @@ export function makePatch({
       const yarnArgs = ["install"]
       const yarnVersionCmd = spawnSafeSync(`yarn`, ["--version"], {
         cwd: tmpRepoNpmRoot,
-        logStdErrOnError: false,
       })
       const isYarnV1 = yarnVersionCmd.stdout.toString().startsWith("1.")
       if (isYarnV1) {
@@ -235,7 +238,6 @@ export function makePatch({
         // this works in 99.99% of cases
         spawnSafeSync(`yarn`, yarnArgs, {
           cwd: tmpRepoNpmRoot,
-          logStdErrOnError: false,
         })
       } catch (e) {
         // try again while ignoring scripts in case the script depends on
@@ -258,7 +260,6 @@ export function makePatch({
         // this works in 99.99% of cases
         spawnSafeSync(`npm`, ["i", "--force"], {
           cwd: tmpRepoNpmRoot,
-          logStdErrOnError: false,
           stdio: "ignore",
         })
       } catch (e) {
@@ -571,12 +572,7 @@ export function makePatch({
       }
     }
   } catch (e) {
-    const err = e as Error & {
-      stdout?: Buffer
-      stderr?: Buffer
-    }
-    // try to log more useful error message
-    console.log(err.stderr?.toString() || err.stdout?.toString() || e)
+    console.error((e as Error).stack || e)
     throw e
   } finally {
     tmpRepo.removeCallback()

@@ -1,5 +1,6 @@
 import { realpathSync } from "fs"
 import { join, relative } from "./path"
+import { spawnSafeSync } from "./spawnSafe"
 
 export interface PackageDetails {
   humanReadablePathSpecifier: string
@@ -10,6 +11,7 @@ export interface PackageDetails {
   name: string
   isNested: boolean
   packageNames: string[]
+  repoRoot?: string
 }
 
 export interface PatchedPackageDetails extends PackageDetails {
@@ -138,6 +140,7 @@ export function getPackageDetailsFromPatchFilename(
     isDevOnly: patchFilename.endsWith(".dev.patch"),
     sequenceName: lastPart.sequenceName,
     sequenceNumber: lastPart.sequenceNumber,
+    repoRoot: appPath && findGitRoot(appPath),
   }
 }
 
@@ -183,5 +186,17 @@ export function getPatchDetailsFromCliString(
     humanReadablePathSpecifier: packageNames.join(" => "),
     isNested: packageNames.length > 1,
     pathSpecifier: specifier,
+    repoRoot: appPath && findGitRoot(appPath),
+  }
+}
+
+function findGitRoot(cwd: string) {
+  try {
+    const result = spawnSafeSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+    })
+    return result.stdout.toString().trim()
+  } catch {
+    return undefined
   }
 }
