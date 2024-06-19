@@ -42,6 +42,7 @@ import {
   STATE_FILE_NAME,
   verifyAppliedPatches,
 } from "./stateFile"
+import slash from "slash"
 
 function printNoPackageFoundError(
   packageName: string,
@@ -149,8 +150,10 @@ export function makePatch({
 
   const appPackageJson = require(join(appPath, "package.json"))
   const packagePath = join(appPath, packageDetails.path)
-  const packageRealpath = realpathSync(packagePath)
   const packageJsonPath = join(packagePath, "package.json")
+  // realpath to the dep: usually the same as packagePath, but will point to a store folder
+  // for a store-based package manager
+  const packageRealpath = realpathSync(packagePath)
 
   if (!existsSync(packageJsonPath)) {
     printNoPackageFoundError(packagePathSpecifier, packageJsonPath)
@@ -159,7 +162,6 @@ export function makePatch({
 
   const tmpRepo = dirSync({ unsafeCleanup: true })
   const tmpRepoPackagePath = join(tmpRepo.name, packageDetails.path)
-  const tmpRepoPackageRealpath = join(tmpRepo.name, packageDetails.realpath!)
   const tmpRepoNpmRoot = tmpRepoPackagePath.slice(
     0,
     -`/node_modules/${packageDetails.name}`.length,
@@ -314,6 +316,9 @@ export function makePatch({
         process.exit(1)
       }
     }
+
+    // For new yarn with pnpm linker, the package might be installed in a different hashed folder
+    const tmpRepoPackageRealpath = slash(realpathSync(tmpRepoPackagePath))
     git("add", "-f", tmpRepoPackageRealpath)
     git("commit", "--allow-empty", "-m", "init")
 
@@ -571,11 +576,12 @@ export function makePatch({
         maybePrintIssueCreationPrompt(vcs, packageDetails, packageManager)
       }
     }
-  } catch (e) {
-    console.error((e as Error).stack || e)
-    throw e
-  } finally {
     tmpRepo.removeCallback()
+  } catch (e) {
+    console.log()
+    console.error((e as Error).stack || e)
+    tmpRepo.removeCallback()
+    process.exit(1)
   }
 }
 

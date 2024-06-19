@@ -19,7 +19,9 @@ export const spawnSafeSync = (
   const result = spawnSync(command, args, options)
   if (result.error || result.status !== 0) {
     const message =
-      `command failed: ${[command, ...args].join(" ")}\n` +
+      `command failed: ${[command, ...args].join(" ")} (cwd: ${
+        mergedOptions.cwd
+      })\n` +
       `stdout:\n${result.stdout.toString()}\nstderr:\n${result.stderr.toString()}`
     if (mergedOptions.throwOnError) {
       throw new Error(message)
