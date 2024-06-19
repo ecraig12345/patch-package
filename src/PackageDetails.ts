@@ -1,4 +1,3 @@
-import { realpathSync } from "fs"
 import { join, relative } from "./path"
 import { spawnSafeSync } from "./spawnSafe"
 
@@ -6,11 +5,10 @@ export interface PackageDetails {
   humanReadablePathSpecifier: string
   pathSpecifier: string
   path: string
-  /** Realpath to the install location, relative to the app path */
-  realpath?: string
   name: string
   isNested: boolean
   packageNames: string[]
+  /** Relative path to the repo root from the app, or undefined if the same */
   repoRoot?: string
 }
 
@@ -129,7 +127,6 @@ export function getPackageDetailsFromPatchFilename(
     name: lastPart.packageName,
     version: lastPart.version,
     path,
-    realpath: appPath && relative(appPath, realpathSync(join(appPath, path))),
     patchFilename,
     pathSpecifier: parts.map(({ packageName: name }) => name).join("/"),
     humanReadablePathSpecifier: parts
@@ -181,7 +178,6 @@ export function getPatchDetailsFromCliString(
   return {
     packageNames,
     path,
-    realpath: appPath && relative(appPath, realpathSync(join(appPath, path))),
     name: packageNames[packageNames.length - 1],
     humanReadablePathSpecifier: packageNames.join(" => "),
     isNested: packageNames.length > 1,
@@ -190,12 +186,13 @@ export function getPatchDetailsFromCliString(
   }
 }
 
+/** Find the git root path relative to cwd, or undefined if the same or not found */
 function findGitRoot(cwd: string) {
   try {
     const result = spawnSafeSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
     })
-    return result.stdout.toString().trim()
+    return relative(cwd, result.stdout.toString().trim()) || undefined
   } catch {
     return undefined
   }
