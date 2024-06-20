@@ -136,7 +136,9 @@ export function getPackageResolution({
 }
 
 if (require.main === module) {
-  const packageDetails = getPatchDetailsFromCliString(process.argv[2])
+  const packageDetails = getPatchDetailsFromCliString({
+    specifier: process.argv[2],
+  })
   if (!packageDetails) {
     console.log(`Can't find package ${process.argv[2]}`)
     process.exit(1)
