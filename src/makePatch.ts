@@ -8,6 +8,7 @@ import {
   mkdirSync,
   realpathSync,
   removeSync,
+  symlinkSync,
   writeFileSync,
 } from "fs-extra"
 import { dirSync } from "tmp"
@@ -31,7 +32,7 @@ import {
 } from "./PackageDetails"
 import { parsePatchFile } from "./patch/parse"
 import { getGroupedPatches } from "./patchFs"
-import { dirname, join, resolve } from "./path"
+import { dirname, join, relative, resolve } from "./path"
 import { resolveRelativeFileDependencies } from "./resolveRelativeFileDependencies"
 import { spawnSafeSync } from "./spawnSafe"
 import {
@@ -154,6 +155,11 @@ export function makePatch({
   // realpath to the dep: usually the same as packagePath, but will point to a store folder
   // for a store-based package manager
   const packageRealpath = realpathSync(packagePath)
+  // if in a nested package in a monorepo, the realpath/store may be under the repo root
+  const packageRelativeRealpath = relative(
+    packageDetails.repoRoot || appPath,
+    packageRealpath,
+  )
 
   if (!existsSync(packageJsonPath)) {
     printNoPackageFoundError(packagePathSpecifier, packageJsonPath)
@@ -298,6 +304,20 @@ export function makePatch({
     // remove ignored files first
     removeIgnoredFiles(tmpRepoPackagePath, includePaths, excludePaths)
 
+    // For new yarn with pnpm linker, the package might be installed in a different hashed folder.
+    // Move it under the path used in the source repo if needed so the diff works.
+    const initialTmpRepoPackageRealpath = slash(
+      realpathSync(tmpRepoPackagePath),
+    )
+    const tmpRepoPackageRealpath = join(tmpRepoNpmRoot, packageRelativeRealpath)
+    if (initialTmpRepoPackageRealpath !== tmpRepoPackageRealpath) {
+      mkdirpSync(dirname(tmpRepoPackageRealpath))
+      renameSync(initialTmpRepoPackageRealpath, tmpRepoPackageRealpath)
+      // fix the symlink to avoid issues in next step
+      removeSync(tmpRepoPackagePath)
+      symlinkSync(tmpRepoPackageRealpath, tmpRepoPackagePath, "dir")
+    }
+
     for (const patchDetails of patchesToApplyBeforeDiffing) {
       if (
         !applyPatch({
@@ -317,8 +337,6 @@ export function makePatch({
       }
     }
 
-    // For new yarn with pnpm linker, the package might be installed in a different hashed folder
-    const tmpRepoPackageRealpath = slash(realpathSync(tmpRepoPackagePath))
     git("add", "-f", tmpRepoPackageRealpath)
     git("commit", "--allow-empty", "-m", "init")
 
