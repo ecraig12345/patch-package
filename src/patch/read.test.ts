@@ -1,6 +1,5 @@
 import { readPatch } from "./read"
 import { getPackageDetailsFromPatchFilename } from "../PackageDetails"
-import { join } from "../path"
 
 const removeAnsiCodes = (s: string) =>
   s.replace(
@@ -8,9 +7,6 @@ const removeAnsiCodes = (s: string) =>
     "",
   )
 
-jest.mock("fs", () => ({
-  realpathSync: (path: string) => path,
-}))
 jest.mock("fs-extra", () => ({
   readFileSync: jest.fn(),
 }))
@@ -32,16 +28,10 @@ describe(readPatch, () => {
     log.mockReset()
   })
   it("throws an error for basic packages", () => {
-    const appPath = "/test/root"
-    const patchDir = "patches/"
-    const patchFilename = "test+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        patchFilename,
-        appPath,
-      })!,
-      patchDir,
+      patchFilePath: "/test/root/patches/test+1.2.3.patch",
+      patchDetails: getPackageDetailsFromPatchFilename("test+1.2.3.patch")!,
+      patchDir: "patches/",
     })
 
     expect(removeAnsiCodes(lastLog())).toMatchInlineSnapshot(`
@@ -66,16 +56,12 @@ describe(readPatch, () => {
   })
 
   it("throws an error for scoped packages", () => {
-    const appPath = "/test/root"
-    const patchDir = "patches/"
-    const patchFilename = "@david+test+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        patchFilename,
-        appPath,
-      })!,
-      patchDir,
+      patchFilePath: "/test/root/patches/@david+test+1.2.3.patch",
+      patchDetails: getPackageDetailsFromPatchFilename(
+        "@david+test+1.2.3.patch",
+      )!,
+      patchDir: "patches/",
     })
 
     expect(removeAnsiCodes(lastLog())).toMatchInlineSnapshot(`
@@ -100,16 +86,11 @@ describe(readPatch, () => {
   })
 
   it("throws an error for nested packages", () => {
-    const appPath = "/test/root"
-    const patchDir = "patches/"
-    const patchFilename = "@david+test++react-native+1.2.3.patch"
+    const patchFileName = "@david+test++react-native+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        patchFilename,
-        appPath,
-      })!,
-      patchDir,
+      patchFilePath: `/test/root/patches/${patchFileName}`,
+      patchDetails: getPackageDetailsFromPatchFilename(patchFileName)!,
+      patchDir: "patches/",
     })
 
     expect(removeAnsiCodes(lastLog())).toMatchInlineSnapshot(`
@@ -134,16 +115,11 @@ describe(readPatch, () => {
   })
 
   it("throws an error for with custom patch dir", () => {
-    const appPath = "/test/root"
-    const patchDir = ".cruft/patches"
-    const patchFilename = "@david+test++react-native+1.2.3.patch"
+    const patchFileName = "@david+test++react-native+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        patchFilename,
-        appPath,
-      })!,
-      patchDir,
+      patchFilePath: `/test/root/.cruft/patches/${patchFileName}`,
+      patchDetails: getPackageDetailsFromPatchFilename(patchFileName)!,
+      patchDir: ".cruft/patches",
     })
 
     expect(removeAnsiCodes(lastLog())).toMatchInlineSnapshot(`
@@ -168,16 +144,11 @@ describe(readPatch, () => {
   })
 
   it("throws an error with cd instruction for unhoisted packages", () => {
-    const appPath = "/test/root/packages/banana"
-    const patchDir = "patches/"
-    const patchFilename = "@david+test++react-native+1.2.3.patch"
+    const patchFileName = "@david+test++react-native+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        patchFilename,
-        appPath,
-      })!,
-      patchDir,
+      patchFilePath: `/test/root/packages/banana/patches/${patchFileName}`,
+      patchDetails: getPackageDetailsFromPatchFilename(patchFileName)!,
+      patchDir: "patches/",
     })
 
     expect(process.cwd).toHaveBeenCalled()
@@ -206,16 +177,11 @@ describe(readPatch, () => {
   })
 
   it("throws an error with cd instruction for unhoisted packages and custom patchDir", () => {
-    const appPath = "/test/root/packages/banana"
-    const patchDir = ".patches/"
-    const patchFilename = "@david+test++react-native+1.2.3.patch"
+    const patchFileName = "@david+test++react-native+1.2.3.patch"
     readPatch({
-      patchFilePath: join(appPath, patchDir, patchFilename),
-      patchDetails: getPackageDetailsFromPatchFilename({
-        appPath,
-        patchFilename,
-      })!,
-      patchDir,
+      patchFilePath: `/test/root/packages/banana/.patches/${patchFileName}`,
+      patchDetails: getPackageDetailsFromPatchFilename(patchFileName)!,
+      patchDir: ".patches/",
     })
 
     expect(process.cwd).toHaveBeenCalled()

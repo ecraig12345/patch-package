@@ -4,20 +4,10 @@ import {
   parseNameAndVersion,
 } from "./PackageDetails"
 
-jest.mock("fs", () => ({
-  realpathSync: (path: string) => path,
-}))
-
-const appPath = "/test/root"
-
 describe("getPackageDetailsFromPatchFilename", () => {
   it("parses new-style patch filenames", () => {
-    expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename: "banana++apple+0.4.2.patch",
-        appPath,
-      }),
-    ).toMatchInlineSnapshot(`
+    expect(getPackageDetailsFromPatchFilename("banana++apple+0.4.2.patch"))
+      .toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "banana => apple",
   "isDevOnly": false,
@@ -37,11 +27,9 @@ Object {
 `)
 
     expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename:
-          "@types+banana++@types+apple++@mollusc+man+0.4.2-banana-tree.patch",
-        appPath,
-      }),
+      getPackageDetailsFromPatchFilename(
+        "@types+banana++@types+apple++@mollusc+man+0.4.2-banana-tree.patch",
+      ),
     ).toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "@types/banana => @types/apple => @mollusc/man",
@@ -63,10 +51,9 @@ Object {
 `)
 
     expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename: "@types+banana.patch++hello+0.4.2-banana-tree.patch",
-        appPath,
-      }),
+      getPackageDetailsFromPatchFilename(
+        "@types+banana.patch++hello+0.4.2-banana-tree.patch",
+      ),
     ).toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "@types/banana.patch => hello",
@@ -87,10 +74,9 @@ Object {
 `)
 
     expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename: "@types+banana.patch++hello+0.4.2-banana-tree.dev.patch",
-        appPath,
-      }),
+      getPackageDetailsFromPatchFilename(
+        "@types+banana.patch++hello+0.4.2-banana-tree.dev.patch",
+      ),
     ).toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "@types/banana.patch => hello",
@@ -112,12 +98,8 @@ Object {
   })
 
   it("works for ordered patches", () => {
-    expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename: "left-pad+1.3.0+02+world",
-        appPath,
-      }),
-    ).toMatchInlineSnapshot(`
+    expect(getPackageDetailsFromPatchFilename("left-pad+1.3.0+02+world"))
+      .toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "left-pad",
   "isDevOnly": false,
@@ -136,10 +118,9 @@ Object {
 `)
 
     expect(
-      getPackageDetailsFromPatchFilename({
-        patchFilename: "@microsoft/api-extractor+2.0.0+01+FixThing",
-        appPath,
-      }),
+      getPackageDetailsFromPatchFilename(
+        "@microsoft/api-extractor+2.0.0+01+FixThing",
+      ),
     ).toMatchInlineSnapshot(`
 Object {
   "humanReadablePathSpecifier": "@microsoft/api-extractor",
@@ -161,6 +142,8 @@ Object {
 })
 
 describe("getPatchDetailsFromCliString", () => {
+  const appPath = "/test/root"
+
   it("handles a minimal package name", () => {
     expect(
       getPatchDetailsFromCliString({ specifier: "patch-package", appPath }),

@@ -8,8 +8,6 @@ export interface PackageDetails {
   name: string
   isNested: boolean
   packageNames: string[]
-  /** Relative path to the repo root from the app, or undefined if the same */
-  repoRoot?: string
 }
 
 export interface PatchedPackageDetails extends PackageDetails {
@@ -91,17 +89,8 @@ export function parseNameAndVersion(
 }
 
 export function getPackageDetailsFromPatchFilename(
-  params:
-    | string
-    | {
-        patchFilename: string
-        appPath: string
-      },
+  patchFilename: string,
 ): PatchedPackageDetails | null {
-  const { patchFilename, appPath } =
-    typeof params === "string"
-      ? { patchFilename: params, appPath: undefined }
-      : params
   const parts = patchFilename
     .replace(/(\.dev)?\.patch$/, "")
     .split("++")
@@ -118,15 +107,13 @@ export function getPackageDetailsFromPatchFilename(
     return null
   }
 
-  const path = join(
-    "node_modules",
-    parts.map(({ packageName: name }) => name).join("/node_modules/"),
-  )
-
   return {
     name: lastPart.packageName,
     version: lastPart.version,
-    path,
+    path: join(
+      "node_modules",
+      parts.map(({ packageName: name }) => name).join("/node_modules/"),
+    ),
     patchFilename,
     pathSpecifier: parts.map(({ packageName: name }) => name).join("/"),
     humanReadablePathSpecifier: parts
@@ -137,22 +124,19 @@ export function getPackageDetailsFromPatchFilename(
     isDevOnly: patchFilename.endsWith(".dev.patch"),
     sequenceName: lastPart.sequenceName,
     sequenceNumber: lastPart.sequenceNumber,
-    repoRoot: appPath && findGitRoot(appPath),
   }
 }
 
-export function getPatchDetailsFromCliString(
-  params:
-    | string
-    | {
-        specifier: string
-        appPath: string
-      },
-): PackageDetails | null {
-  const { specifier, appPath } =
-    typeof params === "string"
-      ? { specifier: params, appPath: undefined }
-      : params
+export function getPatchDetailsFromCliString(params: {
+  specifier: string
+  appPath?: string
+}):
+  | (PackageDetails & {
+      /** Relative path to the repo root from the app, or undefined if the same */
+      repoRoot?: string
+    })
+  | null {
+  const { specifier, appPath } = params
   const parts = specifier.split("/")
 
   const packageNames = []
