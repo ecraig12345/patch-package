@@ -8,7 +8,6 @@ import {
   mkdirSync,
   realpathSync,
   removeSync,
-  symlinkSync,
   writeFileSync,
 } from "fs-extra"
 import { dirSync } from "tmp"
@@ -32,7 +31,7 @@ import {
 } from "./PackageDetails"
 import { parsePatchFile } from "./patch/parse"
 import { getGroupedPatches } from "./patchFs"
-import { dirname, join, relative, resolve } from "./path"
+import { dirname, join, resolve } from "./path"
 import { resolveRelativeFileDependencies } from "./resolveRelativeFileDependencies"
 import { spawnSafeSync } from "./spawnSafe"
 import {
@@ -155,11 +154,6 @@ export function makePatch({
   // realpath to the dep: usually the same as packagePath, but will point to a store folder
   // for a store-based package manager
   const packageRealpath = realpathSync(packagePath)
-  // if in a nested package in a monorepo, the realpath/store may be under the repo root
-  const packageRelativeRealpath = relative(
-    packageDetails.repoRoot || appPath,
-    packageRealpath,
-  )
 
   if (!existsSync(packageJsonPath)) {
     printNoPackageFoundError(packagePathSpecifier, packageJsonPath)
@@ -173,7 +167,7 @@ export function makePatch({
     -`/node_modules/${packageDetails.name}`.length,
   )
 
-  const tmpRepoRootPackageJsonPath = join(tmpRepoNpmRoot, "package.json")
+  const tmpRepoPackageJsonPath = join(tmpRepoNpmRoot, "package.json")
 
   try {
     const patchesDir = resolve(join(appPath, patchDir))
@@ -183,7 +177,7 @@ export function makePatch({
     // make a blank package.json
     mkdirpSync(tmpRepoNpmRoot)
     writeFileSync(
-      tmpRepoRootPackageJsonPath,
+      tmpRepoPackageJsonPath,
       JSON.stringify({
         // support `corepack` enabled without `.yarn/releases`
         packageManager: appPackageJson.packageManager,
@@ -280,6 +274,14 @@ export function makePatch({
       }
     }
 
+    const tmpRepoPackageRealpath = slash(realpathSync(tmpRepoPackagePath))
+    if (tmpRepoPackagePath !== tmpRepoPackageRealpath) {
+      // For new yarn with pnpm linker, the node_modules path is a symlink to a store folder.
+      // Remove the symlink and copy the store folder to the node_modules path.
+      removeSync(tmpRepoPackagePath)
+      renameSync(tmpRepoPackageRealpath, tmpRepoPackagePath)
+    }
+
     const git = (...args: string[]) =>
       spawnSafeSync("git", args, {
         cwd: tmpRepo.name,
@@ -304,20 +306,6 @@ export function makePatch({
     // remove ignored files first
     removeIgnoredFiles(tmpRepoPackagePath, includePaths, excludePaths)
 
-    // For new yarn with pnpm linker, the package might be installed in a different hashed folder.
-    // Move it under the path used in the source repo if needed so the diff works.
-    const initialTmpRepoPackageRealpath = slash(
-      realpathSync(tmpRepoPackagePath),
-    )
-    const tmpRepoPackageRealpath = join(tmpRepoNpmRoot, packageRelativeRealpath)
-    if (initialTmpRepoPackageRealpath !== tmpRepoPackageRealpath) {
-      mkdirpSync(dirname(tmpRepoPackageRealpath))
-      renameSync(initialTmpRepoPackageRealpath, tmpRepoPackageRealpath)
-      // fix the symlink to avoid issues in next step
-      removeSync(tmpRepoPackagePath)
-      symlinkSync(tmpRepoPackageRealpath, tmpRepoPackagePath, "dir")
-    }
-
     for (const patchDetails of patchesToApplyBeforeDiffing) {
       if (
         !applyPatch({
@@ -337,14 +325,14 @@ export function makePatch({
       }
     }
 
-    git("add", "-f", tmpRepoPackageRealpath)
+    git("add", "-f", tmpRepoPackagePath)
     git("commit", "--allow-empty", "-m", "init")
 
     // replace package with user's version
-    removeSync(tmpRepoPackageRealpath)
+    removeSync(tmpRepoPackagePath)
 
-    // pnpm installs packages as symlinks, copySync would copy only the symlink
-    copySync(packageRealpath, tmpRepoPackageRealpath)
+    // copy from the original realpath in case of a symlinked installation layout
+    copySync(packageRealpath, tmpRepoPackagePath)
 
     // remove nested node_modules just to be safe
     removeSync(join(tmpRepoPackagePath, "node_modules"))
@@ -357,7 +345,7 @@ export function makePatch({
     removeIgnoredFiles(tmpRepoPackagePath, includePaths, excludePaths)
 
     // stage all files
-    git("add", "-f", tmpRepoPackageRealpath)
+    git("add", "-f", tmpRepoPackagePath)
 
     // get diff of changes
     const diffResult = git(
