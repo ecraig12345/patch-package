@@ -7,6 +7,7 @@ import {
   mkdirpSync,
   mkdirSync,
   realpathSync,
+  removeSync,
   writeFileSync,
 } from "fs-extra"
 import { sync as rimraf } from "rimraf"
@@ -42,6 +43,7 @@ import {
   STATE_FILE_NAME,
   verifyAppliedPatches,
 } from "./stateFile"
+import slash from "slash"
 
 function printNoPackageFoundError(
   packageName: string,
@@ -73,7 +75,10 @@ export function makePatch({
   createIssue: boolean
   mode: { type: "overwrite_last" } | { type: "append"; name?: string }
 }) {
-  const packageDetails = getPatchDetailsFromCliString(packagePathSpecifier)
+  const packageDetails = getPatchDetailsFromCliString({
+    appPath,
+    specifier: packagePathSpecifier,
+  })
 
   if (!packageDetails) {
     console.log("No such package", packagePathSpecifier)
@@ -147,6 +152,9 @@ export function makePatch({
   const appPackageJson = require(join(appPath, "package.json"))
   const packagePath = join(appPath, packageDetails.path)
   const packageJsonPath = join(packagePath, "package.json")
+  // realpath to the dep: usually the same as packagePath, but will point to a store folder
+  // for a store-based package manager
+  const packageRealpath = realpathSync(packagePath)
 
   if (!existsSync(packageJsonPath)) {
     printNoPackageFoundError(packagePathSpecifier, packageJsonPath)
@@ -172,6 +180,10 @@ export function makePatch({
     writeFileSync(
       tmpRepoPackageJsonPath,
       JSON.stringify({
+        // support `corepack` enabled without `.yarn/releases`
+        packageManager: appPackageJson.packageManager,
+        // support afterInstall script
+        scripts: { postinstall: "echo" },
         dependencies: {
           [packageDetails.name]: getPackageResolution({
             packageDetails,
@@ -191,12 +203,23 @@ export function makePatch({
     )
 
     // copy .npmrc/.yarnrc in case packages are hosted in private registry
-    // copy .yarn directory as well to ensure installations work in yarn 2
+    // copy parts of .yarn directory as well to ensure installations work in yarn 2
     // tslint:disable-next-line:align
-    ;[".npmrc", ".yarnrc", ".yarn"].forEach((rcFile) => {
-      const rcPath = join(appPath, rcFile)
-      if (existsSync(rcPath)) {
-        copySync(rcPath, join(tmpRepo.name, rcFile), { dereference: true })
+    ;[
+      ".npmrc",
+      ".yarnrc",
+      ".yarnrc.yml",
+      // don't include the whole `.yarn` directory which could contain huge `cache`
+      ".yarn/plugins",
+      ".yarn/releases",
+    ].forEach((rcFile) => {
+      const appRcPath = join(appPath, rcFile)
+      const repoRcPath =
+        packageDetails.repoRoot && join(packageDetails.repoRoot, rcFile)
+      if (existsSync(appRcPath)) {
+        copySync(appRcPath, join(tmpRepo.name, rcFile), { dereference: true })
+      } else if (repoRcPath && existsSync(repoRcPath)) {
+        copySync(repoRcPath, join(tmpRepo.name, rcFile), { dereference: true })
       }
     })
 
@@ -205,19 +228,26 @@ export function makePatch({
         chalk.grey("•"),
         `Installing ${packageDetails.name}@${packageVersion} with yarn`,
       )
+      const yarnArgs = ["install"]
+      const yarnVersionCmd = spawnSafeSync(`yarn`, ["--version"], {
+        cwd: tmpRepoNpmRoot,
+      })
+      const isYarnV1 = yarnVersionCmd.stdout.toString().startsWith("1.")
+      if (isYarnV1) {
+        yarnArgs.push("--ignore-engines")
+      }
       try {
         // try first without ignoring scripts in case they are required
         // this works in 99.99% of cases
-        spawnSafeSync(`yarn`, ["install", "--ignore-engines"], {
+        spawnSafeSync(`yarn`, yarnArgs, {
           cwd: tmpRepoNpmRoot,
-          logStdErrOnError: false,
         })
       } catch (e) {
         // try again while ignoring scripts in case the script depends on
         // an implicit context which we haven't reproduced
         spawnSafeSync(
           `yarn`,
-          ["install", "--ignore-engines", "--ignore-scripts"],
+          [...yarnArgs, isYarnV1 ? "--ignore-scripts" : "--mode=skip-build"],
           {
             cwd: tmpRepoNpmRoot,
           },
@@ -233,7 +263,6 @@ export function makePatch({
         // this works in 99.99% of cases
         spawnSafeSync(`npm`, ["i", "--force"], {
           cwd: tmpRepoNpmRoot,
-          logStdErrOnError: false,
           stdio: "ignore",
         })
       } catch (e) {
@@ -244,6 +273,14 @@ export function makePatch({
           stdio: "ignore",
         })
       }
+    }
+
+    const tmpRepoPackageRealpath = slash(realpathSync(tmpRepoPackagePath))
+    if (tmpRepoPackagePath !== tmpRepoPackageRealpath) {
+      // For new yarn with pnpm linker, the node_modules path is a symlink to a store folder.
+      // Remove the symlink and copy the store folder to the node_modules path.
+      removeSync(tmpRepoPackagePath)
+      renameSync(tmpRepoPackageRealpath, tmpRepoPackagePath)
     }
 
     const git = (...args: string[]) =>
@@ -288,14 +325,15 @@ export function makePatch({
         process.exit(1)
       }
     }
-    git("add", "-f", packageDetails.path)
+
+    git("add", "-f", tmpRepoPackagePath)
     git("commit", "--allow-empty", "-m", "init")
 
     // replace package with user's version
     rimraf(tmpRepoPackagePath)
 
-    // pnpm installs packages as symlinks, copySync would copy only the symlink
-    copySync(realpathSync(packagePath), tmpRepoPackagePath)
+    // copy from the original realpath in case of a symlinked installation layout
+    copySync(packageRealpath, tmpRepoPackagePath)
 
     // remove nested node_modules just to be safe
     rimraf(join(tmpRepoPackagePath, "node_modules"))
@@ -308,7 +346,7 @@ export function makePatch({
     removeIgnoredFiles(tmpRepoPackagePath, includePaths, excludePaths)
 
     // stage all files
-    git("add", "-f", packageDetails.path)
+    git("add", "-f", tmpRepoPackagePath)
 
     // get diff of changes
     const diffResult = git(
@@ -320,6 +358,7 @@ export function makePatch({
       "--src-prefix=a/",
       "--dst-prefix=b/",
     )
+    console.debug(diffResult.stdout.toString())
 
     if (diffResult.stdout.length === 0) {
       console.log(
@@ -338,9 +377,10 @@ export function makePatch({
     try {
       parsePatchFile(diffResult.stdout.toString())
     } catch (e) {
-      if (
-        (e as Error).message.includes("Unexpected file mode string: 120000")
-      ) {
+      const err = e as Error
+      console.debug(err.stack)
+
+      if (err.message.includes("Unexpected file mode string: 120000")) {
         console.log(`
 ⛔️ ${chalk.red.bold("ERROR")}
 
@@ -358,7 +398,7 @@ export function makePatch({
           outPath,
           gzipSync(
             JSON.stringify({
-              error: { message: e.message, stack: e.stack },
+              error: { message: err.message, stack: err.stack },
               patch: diffResult.stdout.toString(),
             }),
           ),
@@ -543,11 +583,12 @@ export function makePatch({
         maybePrintIssueCreationPrompt(vcs, packageDetails, packageManager)
       }
     }
-  } catch (e) {
-    console.log(e)
-    throw e
-  } finally {
     tmpRepo.removeCallback()
+  } catch (e) {
+    console.log()
+    console.error((e as Error).stack || e)
+    tmpRepo.removeCallback()
+    process.exit(1)
   }
 }
 

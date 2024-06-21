@@ -107,7 +107,6 @@ export function executeTestCase(testCase: TestCase) {
     ["diff", "--color=never", "--cached"],
     {
       cwd: tmpDir.name,
-      logStdErrOnError: true,
       throwOnError: true,
     },
   )
