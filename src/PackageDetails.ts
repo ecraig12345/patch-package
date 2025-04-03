@@ -1,4 +1,5 @@
-import { join } from "./path"
+import { join, relative } from "./path"
+import { spawnSafeSync } from "./spawnSafe"
 
 export interface PackageDetails {
   humanReadablePathSpecifier: string
@@ -85,7 +86,6 @@ export function parseNameAndVersion(
       return null
     }
   }
-  return null
 }
 
 export function getPackageDetailsFromPatchFilename(
@@ -127,9 +127,16 @@ export function getPackageDetailsFromPatchFilename(
   }
 }
 
-export function getPatchDetailsFromCliString(
-  specifier: string,
-): PackageDetails | null {
+export function getPatchDetailsFromCliString(params: {
+  specifier: string
+  appPath?: string
+}):
+  | (PackageDetails & {
+      /** Relative path to the repo root from the app, or undefined if the same */
+      repoRoot?: string
+    })
+  | null {
+  const { specifier, appPath } = params
   const parts = specifier.split("/")
 
   const packageNames = []
@@ -142,13 +149,11 @@ export function getPatchDetailsFromCliString(
         return null
       }
       scope = parts[i]
+    } else if (scope) {
+      packageNames.push(`${scope}/${parts[i]}`)
+      scope = null
     } else {
-      if (scope) {
-        packageNames.push(`${scope}/${parts[i]}`)
-        scope = null
-      } else {
-        packageNames.push(parts[i])
-      }
+      packageNames.push(parts[i])
     }
   }
 
@@ -161,5 +166,18 @@ export function getPatchDetailsFromCliString(
     humanReadablePathSpecifier: packageNames.join(" => "),
     isNested: packageNames.length > 1,
     pathSpecifier: specifier,
+    repoRoot: appPath && findGitRoot(appPath),
+  }
+}
+
+/** Find the git root path relative to cwd, or undefined if the same or not found */
+function findGitRoot(cwd: string) {
+  try {
+    const result = spawnSafeSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd,
+    })
+    return relative(cwd, result.stdout.toString().trim()) || undefined
+  } catch {
+    return undefined
   }
 }

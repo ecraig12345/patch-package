@@ -142,8 +142,12 @@ Object {
 })
 
 describe("getPatchDetailsFromCliString", () => {
+  const appPath = "/test/root"
+
   it("handles a minimal package name", () => {
-    expect(getPatchDetailsFromCliString("patch-package")).toMatchInlineSnapshot(
+    expect(
+      getPatchDetailsFromCliString({ specifier: "patch-package", appPath }),
+    ).toMatchInlineSnapshot(
       `
 Object {
   "humanReadablePathSpecifier": "patch-package",
@@ -161,7 +165,10 @@ Object {
 
   it("handles a scoped package name", () => {
     expect(
-      getPatchDetailsFromCliString("@david/patch-package"),
+      getPatchDetailsFromCliString({
+        specifier: "@david/patch-package",
+        appPath,
+      }),
     ).toMatchInlineSnapshot(
       `
 Object {
@@ -180,7 +187,10 @@ Object {
 
   it("handles a nested package name", () => {
     expect(
-      getPatchDetailsFromCliString("david/patch-package"),
+      getPatchDetailsFromCliString({
+        specifier: "david/patch-package",
+        appPath,
+      }),
     ).toMatchInlineSnapshot(
       `
 Object {
@@ -200,7 +210,10 @@ Object {
 
   it("handles a nested package name with scopes", () => {
     expect(
-      getPatchDetailsFromCliString("@david/patch-package/banana"),
+      getPatchDetailsFromCliString({
+        specifier: "@david/patch-package/banana",
+        appPath,
+      }),
     ).toMatchInlineSnapshot(
       `
 Object {
@@ -218,7 +231,10 @@ Object {
     )
 
     expect(
-      getPatchDetailsFromCliString("@david/patch-package/@david/banana"),
+      getPatchDetailsFromCliString({
+        specifier: "@david/patch-package/@david/banana",
+        appPath,
+      }),
     ).toMatchInlineSnapshot(
       `
 Object {
@@ -236,7 +252,10 @@ Object {
     )
 
     expect(
-      getPatchDetailsFromCliString("david/patch-package/@david/banana"),
+      getPatchDetailsFromCliString({
+        specifier: "david/patch-package/@david/banana",
+        appPath,
+      }),
     ).toMatchInlineSnapshot(
       `
 Object {
